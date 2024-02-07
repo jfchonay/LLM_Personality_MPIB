@@ -3,9 +3,7 @@ import os
 import re
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.cm import get_cmap
 import seaborn as sns
-import json
 
 
 def clean_items(value):
@@ -128,13 +126,12 @@ if __name__ == "__main__":
     data_set = 'Open_Source_Psychometrics'
     data = 'item_correlation'
 
-    # correlations = pd.read_csv((os.path.join(root, data_set, data) + '.tsv'), header=0)
-    # correlations['item_i'] = correlations['item_i'].apply(clean_items)
-    # correlations['item_j'] = correlations['item_j'].apply(clean_items)
-    #
-    # paired_similarities_df = get_similarities(correlations)
-    # paired_similarities_df.to_csv((os.path.join(root, data_set) + '/similarity_scores.tsv'), index=False)
-    paired_similarities_df = pd.read_csv((os.path.join(root, data_set) + '/similarity_scores.tsv'), header=0)
+    correlations = pd.read_csv((os.path.join(root, data_set, data) + '.tsv'), header=0)
+    correlations['item_i'] = correlations['item_i'].apply(clean_items)
+    correlations['item_j'] = correlations['item_j'].apply(clean_items)
+
+    paired_similarities_df = get_similarities(correlations)
+    paired_similarities_df.to_csv((os.path.join(root, data_set) + '/similarity_scores.tsv'), index=False)
 
     zscore_df = get_scale_zscore(paired_similarities_df)
 
