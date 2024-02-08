@@ -7,6 +7,8 @@ import seaborn as sns
 
 
 def clean_items(value):
+    # clean our items by making sure all of them are strings. We remove any character that it's not a letter, number
+    # or significant punctuation
     return re.sub('[^A-Za-z0-9.,!?()"\'\s:-]', ' ', str(value))
 
 
@@ -85,26 +87,38 @@ def get_similarities(correlations_df):
 
 
 def get_scale_zscore(similarities_df):
+    # we want to calculate each inventory individually, as we want the mean and standard deviation of each inventory
     inventory_zscore = []
+    # we can use the groupby function to segment our data
     for inventory_name, inventory_df in similarities_df.groupby('inventory', sort=False):
+        # based on our data structure we know that we have two similarity measures, one based on pearson and one based
+        # on spearman. We want to use them both but separate to calculate the z values
         select_cols = ['pearson_similarity', 'spearman_similarity']
         for col in select_cols:
+            # calculate the z score and save it in a new column
             col_zscore = col + '_zscore'
             inventory_df[col_zscore] = (inventory_df[col] - inventory_df[col].mean()) / inventory_df[
                 col].std(ddof=0)
         inventory_zscore.append(inventory_df)
+    # we save one data frame for the full data set, that contains each individual inventory
     zscore_df = pd.concat(inventory_zscore, axis=0)
     return zscore_df
 
 
 def plot_zscore(zscore_df, path, data_set):
-
+    # for visualization, we only want to select the values of the z scores when the similarity is between the same
+    # scale so we can use logical indexing for this
     scales_df = zscore_df[zscore_df['scale_i'] == zscore_df['scale_j']].reset_index(drop=True)
+    # to facilitate plotting we are going to create a new ID column where we combine the scale name and inventory name
+    # so that we have unique IDs for every pair
     scales_df['scale_inventory'] = scales_df['scale_i'] + scales_df['inventory']
+    # again based on our data schema, we want to plot the pearson and spearman z values
     columns_plot = ['pearson_similarity_zscore', 'spearman_similarity_zscore']
-
+    # we iterate over our desired values
     for col in columns_plot:
         plt.figure(figsize=(30, 20), dpi=1000)
+        # we are going to use the unique ID as the x axis, the z score as the y axis, and we group them together by
+        # the inventory
         ax = sns.barplot(scales_df, x='scale_inventory', y=col, hue='inventory', palette='Dark2', saturation=1,
                          dodge=True, legend='full', width=2)
         ax.set_title(f'Z values for the averaged similarity scores of items in the same scale \n '
@@ -113,6 +127,8 @@ def plot_zscore(zscore_df, path, data_set):
         ax.set_xlabel('Scales', fontsize=18)
         ax.set_xticks([])
         ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=16)
+        # we want to add a horizontal line at value 1 and value 2, we expect all our values to be larger than 1 and
+        # ideally larger than 2
         ax.axhline(y=1, xmin=0, xmax=1, linewidth=1, color='r')
         ax.axhline(y=2, xmin=0, xmax=1, linewidth=0.5, color='black', linestyle='--')
         plt.tight_layout()
