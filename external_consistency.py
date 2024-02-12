@@ -70,6 +70,26 @@ def get_corr_similarities(cosine_similarity, empirical_similarity):
     return final_df
 
 
+def plot_corr_lt(correlations_df, root, data_set):
+    correlations_df = correlations_df.dropna()
+    corr_types = ['pearson', 'spearman']
+    for simi_type in corr_types:
+        plt.figure(figsize=(20, 10), dpi=1000)
+        ax = sns.scatterplot(correlations_df, x=correlations_df['inventory'], y=correlations_df[f'cosine_{simi_type}'],
+                             hue=correlations_df['inventory'], hue_order=correlations_df['inventory'],
+                             palette='tab10', s=200)
+        ax.axhline(y=0.2, xmin=0, xmax=1, linewidth=0.5, color='black', linestyle='--')
+        ax.set_title(f'Lower triangle  Spearman correlation between the cosine and {simi_type} similarity, \n '
+                     f'for all inventories in the {data_set} dataset', fontsize=20)
+        ax.set_ylabel('Spearman coefficient', fontsize=16)
+        ax.set_xlabel('Inventory', fontsize=16)
+        ax.set_xticks([])
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        plt.tight_layout()
+        plt.savefig((os.path.join(root, data_set, ('sr_cosine_'+simi_type+'.png'))))
+        plt.close()
+
+
 if __name__ == "__main__":
     root = '/Users/josechonay/Library/CloudStorage/OneDrive-CarlvonOssietzkyUniversitätOldenburg/Winter Semester ' \
            '23-24/Internship/ARC'
@@ -81,19 +101,43 @@ if __name__ == "__main__":
 
     empirical_similarity = pd.read_csv(os.path.join(root, data_set, 'similarity_scores.tsv'), header=0)
 
-    similarities_corr = get_corr_similarities(cosine_similarity, empirical_similarity)
+    # similarities_corr = get_corr_similarities(cosine_similarity, empirical_similarity)
+    #
+    # plot_corr_lt(similarities_corr, root, data_set)
 
-    plt.figure()
-    ax = sns.scatterplot(similarities_corr, x=similarities_corr['inventory'], y=similarities_corr['cosine_pearson'],
-                         hue=similarities_corr['inventory'], palette='pastel')
-    ax.set_title(f'Lower triangle  Spearman correlation between the cosine and pearson similarity for \n '
-                 f'every inventory in the dataset')
-    ax.set_ylabel('Spearman coefficient')
-    ax.set_xlabel('Inventory')
-    ax.set_xticks([])
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    plt.tight_layout()
-    plt.show()
+    empirical_similarity = empirical_similarity[empirical_similarity['scale_i'] ==
+                                                empirical_similarity['scale_j']].reset_index(drop=True)
+    all_similarities = pd.merge(cosine_similarity, empirical_similarity, left_on=['inventory', 'scale'],
+                                right_on=['inventory', 'scale_i']).reset_index(drop=True)
+    df = all_similarities.drop(['scale_j', 'scale_i'], axis=1)
+
+    all_inventory = []
+    final_pearson = []
+    final_spearman = []
+    inventory_ID = []
+    for inventory_name, inventory_df in df.groupby('inventory', sort=False):
+        all_inventory.append(inventory_df)
+    for one_inventory in all_inventory:
+        inventory_correlation_pearson = []
+        inventory_correlation_spearman = []
+        for i in range(len(one_inventory)):
+            # Omit the ith value in both predicted and empirical similarities
+            loo_inventory = one_inventory.drop(i, axis=1)
+            correlation_pearson = spearmanr(loo_inventory['cosine_similarity'].abs(),
+                                            loo_inventory['pearson_similarity'].abs(), nan_policy='omit').statistic
+            correlation_spearman = spearmanr(loo_inventory['cosine_similarity'].abs(),
+                                             loo_inventory['spearman_similarity'].abs(), nan_policy='omit').statistic
+            inventory_correlation_pearson.append(correlation_pearson)
+            inventory_correlation_spearman.append(correlation_spearman)
+        inventory_ID.append(one_inventory['inventory'].unique()[0])
+        final_pearson.append(np.mean(inventory_correlation_pearson))
+        final_spearman.append(np.mean(inventory_correlation_spearman))
+
+    schema = {'inventory': 'str', 'cosine_pearson': 'float32', 'cosine_spearman': 'float32'}
+    final_df = pd.DataFrame(columns=schema.keys()).astype(schema)
+    main_list = [inventory_ID, final_pearson, final_spearman]
+    for col_names, values_list in zip(schema.keys(), main_list):
+        final_df[col_names] = values_list
 
     # test_data = all_similarities[all_similarities['inventory'] == '275-IPIP']
     # correlation_test = spearmanr(test_data['cosine_similarity'], test_data['pearson_similarity'],
