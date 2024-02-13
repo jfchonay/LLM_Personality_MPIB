@@ -8,70 +8,95 @@ import matplotlib.pyplot as plt
 
 
 def scale_cos_sim(items_df):
+    # we define our model for the sentence transformer, we are using MPnet for more information look up for the
+    # documentation in sbert.net
     model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
     group_inventory = []
+    # we are constructing similarity measures between the scales of the same inventories, so we want to segment our
+    # data by inventories
     for inventory_name, inventory_df in items_df.groupby('inventory', sort=False):
         group_inventory.append(inventory_df)
-    schema = ['inventory', 'scale', 'cosine_similarity']
-    final_df = pd.DataFrame(columns=schema)
+    # define column names and data types for our data frame, also the lists that will store the data
+    schema = {'inventory': 'str', 'scale': 'str', 'cosine_similarity': 'float32'}
+    final_df = pd.DataFrame(columns=schema.keys())
     inventory = []
     scale = []
     cosine_similarity = []
     group_scale = []
+    # iterate over every individual inventory to create a list of data frames by scale, we want to reset the index
+    # for simplifying indexing in the next steps
     for inventory_df in group_inventory:
         scale_combinations = inventory_df.groupby('scale', sort=False)
         for scale_name, scale_df in scale_combinations:
+            # we end with one data frame per scale in each inventory
             group_scale.append(scale_df.reset_index(drop=True))
+    # now if we iterate over each element we are accessing individual scales for each inventory
     for individual_scale in group_scale:
+        # we can extract the sentences for the model to create the embeddings
         sentences = individual_scale['item'].tolist()
         embeddings = model.encode(sentences, convert_to_tensor=True)
+        # calculate the cosine similarity between all embeddings, this matrix will be of the size of
+        # embeddings X embeddings and will contain all similarities
         all_cosine = util.cos_sim(embeddings, embeddings)
         unique_cosine = []
+        # we want to extract only the similarities that represent a unique calculation and represent all combinations
+        # possible between all items in the same scale
         for i in range(len(all_cosine) - 1):
             for j in range(i + 1, len(all_cosine)):
                 unique_cosine.append(all_cosine[i][j])
+        # now we can create every row of our data frame as an element of the list
         inventory.append(individual_scale['inventory'][0])
         scale.append(individual_scale['scale'][0])
+        # we want the average cosine similarity for every scale
         cosine_similarity.append(np.mean(unique_cosine))
     main_list = [inventory, scale, cosine_similarity]
-    for col_names, values_list in zip(schema, main_list):
+    # create our data frame
+    for col_names, values_list in zip(schema.keys(), main_list):
         final_df[col_names] = values_list
     return final_df
 
 
 def lt_corr_similarities(cosine_similarity, empirical_similarity):
+    # we want to keep only the values that represent the similarity between the same scale, as in this data frame we
+    # have calculated the similarity between all possible scales in the same inventory
     empirical_similarity = empirical_similarity[empirical_similarity['scale_i'] ==
                                                 empirical_similarity['scale_j']].reset_index(drop=True)
-
+    # we can merge our two data frames, as they will have the same value in inventory and the same value in scale
     all_similarities = pd.merge(cosine_similarity, empirical_similarity, left_on=['inventory', 'scale'],
                                 right_on=['inventory', 'scale_i']).reset_index(drop=True)
     all_similarities = all_similarities.drop(['scale_j', 'scale_i'], axis=1)
-
+    # we want to calculate the relationship for every inventory in the data set, so we group by inventory
     all_inventory = []
     for inventory_name, inventory_df in all_similarities.groupby('inventory', sort=False):
         all_inventory.append(inventory_df)
+    # now we can iterate over each inventory data frame and calculate the relationship between the scales
+    # different similarities
     inventory_ID = []
     inventory_correlation_pearson = []
     inventory_correlation_spearman = []
     for one_inventory in all_inventory:
-        correlation_pearson = spearmanr(one_inventory['cosine_similarity'].abs(), one_inventory['pearson_similarity'].abs(),
-                                        nan_policy='omit').statistic
-        correlation_spearman = spearmanr(one_inventory['cosine_similarity'].abs(), one_inventory['spearman_similarity'].abs(),
-                                         nan_policy='omit').statistic
+        # we are interested in the absolute values as the embedding model is not the best at predicting direction
+        correlation_pearson = spearmanr(one_inventory['cosine_similarity'].abs(),
+                                        one_inventory['pearson_similarity'].abs(), nan_policy='omit').statistic
+        correlation_spearman = spearmanr(one_inventory['cosine_similarity'].abs(),
+                                         one_inventory['spearman_similarity'].abs(), nan_policy='omit').statistic
         inventory_ID.append(one_inventory['inventory'].unique()[0])
         inventory_correlation_pearson.append(correlation_pearson)
         inventory_correlation_spearman.append(correlation_spearman)
+    # define the schema for our data frame, with the column  names and data types
     schema = {'inventory': 'str', 'cosine_pearson': 'float32', 'cosine_spearman': 'float32'}
     final_df = pd.DataFrame(columns=schema.keys()).astype(schema)
     main_list = [inventory_ID, inventory_correlation_pearson, inventory_correlation_spearman]
+    # construct the final data frame by unzipping the information in our lists and dictionary
     for col_names, values_list in zip(schema.keys(), main_list):
         final_df[col_names] = values_list
-
     return final_df
 
 
 def plot_corr_lt(correlations_df, path, data_set):
+    # clean our data frame by deleting any empty values, normally created by uni dimensional tests
     correlations_df = correlations_df.dropna()
+    # we know we want to plot for each similarity relationship, cosine-pearson and cosine-spearman
     corr_types = ['pearson', 'spearman']
     for simi_type in corr_types:
         plt.figure(figsize=(20, 10), dpi=1000)
@@ -92,18 +117,24 @@ def plot_corr_lt(correlations_df, path, data_set):
 
 
 def loo_corr_similarities(cosine_similarity, empirical_similarity):
+    # we want to keep only the values that represent the similarity between the same scale, as in this data frame we
+    # have calculated the similarity between all possible scales in the same inventory
     empirical_similarity = empirical_similarity[empirical_similarity['scale_i'] ==
                                                 empirical_similarity['scale_j']].reset_index(drop=True)
+    # we can merge our two data frames, as they will have the same value in inventory and the same value in scale
     all_similarities = pd.merge(cosine_similarity, empirical_similarity, left_on=['inventory', 'scale'],
                                 right_on=['inventory', 'scale_i']).reset_index(drop=True)
     df = all_similarities.drop(['scale_j', 'scale_i'], axis=1)
-
     all_inventory = []
     final_pearson = []
     final_spearman = []
     inventory_ID = []
+    # iterate over every individual inventory to create a list of data frames by scale, we want to reset the index
+    # for simplifying indexing in the next steps
     for inventory_name, inventory_df in df.groupby('inventory', sort=False):
         all_inventory.append(inventory_df.reset_index(drop=True))
+    # now we can iterate over each inventory data frame and calculate the relationship between the scales
+    # different similarity measurements
     for one_inventory in all_inventory:
         inventory_correlation_pearson = []
         inventory_correlation_spearman = []
@@ -114,22 +145,27 @@ def loo_corr_similarities(cosine_similarity, empirical_similarity):
                                             loo_inventory['pearson_similarity'].abs(), nan_policy='omit').statistic
             correlation_spearman = spearmanr(loo_inventory['cosine_similarity'].abs(),
                                              loo_inventory['spearman_similarity'].abs(), nan_policy='omit').statistic
+            # we calculate the spearman correlation for every row or scale in an inventory while omiting that scale
             inventory_correlation_pearson.append(correlation_pearson)
             inventory_correlation_spearman.append(correlation_spearman)
+        # construct the lists with the elements for each inventory
         inventory_ID.append(one_inventory['inventory'].unique()[0])
         final_pearson.append(np.mean(inventory_correlation_pearson))
         final_spearman.append(np.mean(inventory_correlation_spearman))
-
+    # define the column names and data types for our final data frame
     schema = {'inventory': 'str', 'cosine_pearson': 'float32', 'cosine_spearman': 'float32'}
     final_df = pd.DataFrame(columns=schema.keys()).astype(schema)
     main_list = [inventory_ID, final_pearson, final_spearman]
+    # construct the final data frame by unzipping the information in our lists and dictionary
     for col_names, values_list in zip(schema.keys(), main_list):
         final_df[col_names] = values_list
     return final_df
 
 
 def plot_corr_loo(correlations_df, path, data_set):
+    # clean our data frame by deleting any empty values, normally created by uni dimensional tests
     correlations_df = correlations_df.dropna()
+    # we know we want to plot for each similarity relationship, cosine-pearson and cosine-spearman
     corr_types = ['pearson', 'spearman']
     for simi_type in corr_types:
         plt.figure(figsize=(20, 10), dpi=1000)
