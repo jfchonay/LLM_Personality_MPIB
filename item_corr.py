@@ -219,8 +219,7 @@ def construct_corr_df(items, scores, save, **path):
 
 
 if __name__ == "__main__":
-    root = '/Users/josechonay/Library/CloudStorage/OneDrive-CarlvonOssietzkyUniversitätOldenburg/Winter Semester ' \
-           '23-24/Internship/ARC'
+    root = 'path to folder'
     data_set = 'Springfield_Community'
     scores_folder = os.path.join(root, data_set, 'scores')
     item_folder = os.path.join(root, data_set, 'items')
