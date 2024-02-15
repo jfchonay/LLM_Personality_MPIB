@@ -1,18 +1,28 @@
 import pandas as pd
 import os
-import re
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-
-def clean_items(value):
-    # clean our items by making sure all of them are strings. We remove any character that it's not a letter, number
-    # or significant punctuation
-    return re.sub('[^A-Za-z0-9.,!?()"\'\s:-]', ' ', str(value))
+from item_corr import just_language
+import json
 
 
 def get_similarities(correlations_df):
+    """This function will take the correlations data frame, where all possible and unique pair wise correlations exist,
+     between all the items in the data set. It will calculate the average inter scale similarity, by taking all the
+     pearson and spearman values for the scale pairs and averaging them. As a result it will provide a data frame that
+     contains all similarities between all possible scale combinations that belong to the same inventory. It will
+     contain the columns inventory, scale_i, scale_j, pearson_similarity, spearman_similarity.
+
+        Parameters:
+            correlations_df (df): a data frame that contains all possible and unique pair wise correlations of all items
+            in the data set.
+
+        Returns:
+            df
+                final_df: a data frame containing all averaged similarities between all possible pairs of scales that
+                belong to the same inventory.
+       """
     # the first step is to divided our data frame into inventories, as we wanna only check the relationship of the
     # scales for the same inventory
     group_inventory = []
@@ -87,6 +97,22 @@ def get_similarities(correlations_df):
 
 
 def get_scale_zscore(similarities_df):
+    """This function will take the between scale similarities data frame and will calculate the z score for each scale
+    in the inventory. It will go inventory by inventory, take the calculated similarity scores and return a z value. The
+    resulting data frame will have the columns inventory, scale_i, scale_j, pearson_similarity, spearman_similarity,
+    pearson_similarity_zscore, spearman_similarity_zscore.
+
+            Parameters:
+                similarities_df (df): a data frame that contains all between scales averaged similarities in each
+                inventory for all inventories in the data set.
+
+            Returns:
+                df
+                    zscore_df: a data frame containing all averaged similarities between all possible pairs of scales that
+                    belong to the same inventory and their z score.
+                dict
+                    z_md: a dictionary containing the metadata of the data frame
+           """
     # we want to calculate each inventory individually, as we want the mean and standard deviation of each inventory
     inventory_zscore = []
     # we can use the groupby function to segment our data
@@ -98,14 +124,31 @@ def get_scale_zscore(similarities_df):
             # calculate the z score and save it in a new column
             col_zscore = col + '_zscore'
             inventory_df[col_zscore] = (inventory_df[col] - inventory_df[col].mean()) / inventory_df[
-                col].std(ddof=0)
+                col].std()
         inventory_zscore.append(inventory_df)
     # we save one data frame for the full data set, that contains each individual inventory
     zscore_df = pd.concat(inventory_zscore, axis=0)
-    return zscore_df
+    # meta data of our data frame
+    z_md = {
+        'information': 'This data frame contains averaged similarities between all possible scale pairs in the same'
+                       'inventory and their z score calculated within inventory',
+        'columns': zscore_df.columns.tolist()
+    }
+    return zscore_df, z_md
 
 
-def plot_zscore(zscore_df, path, data_set):
+def plot_zscore(zscore_df, path):
+    """This function uses matplotlib and seaborn libraries to plot the zscores of the average pearson and spearman
+     similarity. It will save the plots to the path and data set that you set.
+
+            Parameters:
+                zscore_df (df): a data frame that contains all between scales averaged similarities in each
+                inventory for all inventories in the data set and their z value. It should have the columns inventory,
+                scale_i, scale_j, pearson_similarity, spearman_similarity, pearson_similarity_zscore,
+                spearman_similarity_zscore.
+                path (str): the path to the folder where you want to save the figures
+
+           """
     # for visualization, we only want to select the values of the z scores when the similarity is between the same
     # scale so we can use logical indexing for this
     scales_df = zscore_df[zscore_df['scale_i'] == zscore_df['scale_j']].reset_index(drop=True)
@@ -132,7 +175,7 @@ def plot_zscore(zscore_df, path, data_set):
         ax.axhline(y=1, xmin=0, xmax=1, linewidth=1, color='r')
         ax.axhline(y=2, xmin=0, xmax=1, linewidth=0.5, color='black', linestyle='--')
         plt.tight_layout()
-        plt.savefig((os.path.join(path, data_set, (col+'.png'))))
+        plt.savefig((os.path.join(path, (col+'.png'))))
         plt.close()
 
 
@@ -143,12 +186,14 @@ if __name__ == "__main__":
     data = 'item_correlation'
 
     correlations = pd.read_csv((os.path.join(root, data_set, data) + '.tsv'), header=0)
-    correlations['item_i'] = correlations['item_i'].apply(clean_items)
-    correlations['item_j'] = correlations['item_j'].apply(clean_items)
+    correlations['item_i'] = correlations['item_i'].apply(just_language)
+    correlations['item_j'] = correlations['item_j'].apply(just_language)
 
     paired_similarities_df = get_similarities(correlations)
-    paired_similarities_df.to_csv((os.path.join(root, data_set) + '/similarity_scores.tsv'), index=False)
 
-    zscore_df = get_scale_zscore(paired_similarities_df)
+    zscore_df, z_md = get_scale_zscore(paired_similarities_df)
+    zscore_df.to_csv((os.path.join(root, data_set) + '/similarity_zscores.tsv'), index=False)
+    with open((os.path.join(root, data_set) + '/similarity_zscores.json'), 'w') as metadata_file:
+        json.dump(z_md, metadata_file)
 
-    plot_zscore(zscore_df, root, data_set)
+    plot_zscore(zscore_df, os.path.join(root, data_set))
