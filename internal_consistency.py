@@ -180,8 +180,7 @@ def plot_zscore(zscore_df, path):
 
 
 if __name__ == "__main__":
-    root = '/Users/josechonay/Library/CloudStorage/OneDrive-CarlvonOssietzkyUniversitätOldenburg/Winter Semester ' \
-           '23-24/Internship/ARC'
+    root = 'path to folder'
     data_set = 'Open_Source_Psychometrics'
     data = 'item_correlation'
 
