@@ -179,9 +179,8 @@ def plot_zscore(zscore_df, path):
 
 
 if __name__ == "__main__":
-    root = '/Users/josechonay/Library/CloudStorage/OneDrive-CarlvonOssietzkyUniversitätOldenburg/Winter Semester ' \
-           '23-24/Internship/ARC'
-    data_set = 'Open_Source_Psychometrics'
+    root = 'path to folder'
+    data_set = 'name of data set'
 
     correlations = pd.read_csv(os.path.join(root, data_set, 'item_correlation.tsv'), header=0)
 
