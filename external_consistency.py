@@ -57,53 +57,66 @@ def scale_cos_sim(items_df):
 
 
 def lt_corr_similarities(cosine_similarity, correlations):
+    """This function will calculate the scale spearman correlation between the cosine similarities and pearson and
+    spearman similarities. The cosine similarities are calculated with the embeddings, and they are in the form of a
+    list. The list contain tuples, in the first element there is the list of item IDs of that scale and the second
+    element is the cosine similarity matrix between all those items. The correlation data frame contains all possible
+    inter item correlation pairs for this data set. We want to extract the lower triangle of both similarities,
+    meaning all the possible and unique pairings. Then the function will calculate the spearman correlation between
+    both arrays and return a value per scale for all scales in all inventories in the data set. The resulting data
+    frame will have columns: inventory, scale, cosine_pearson, spearman_pearson
+
+        Parameters:
+            cosine_similarity (list): a list of tuples, each tuple represents one scale. The first element represents
+            the ID of all elements used to calculate the matrix of cosine similarities. The second element is the
+            matrix of cosine similarities.
+            correlations (df): a data frame containing all possible pair wise correlations for all items in the data
+            set. It should have the columns: inventory_i, scale_i, item_i, id_i, inventory_j, scale_j, item_j, id_j,
+            pearson, spearman.
+
+        Returns:
+            df
+                final_df: a data frame that contains the spearman coefficient for every scale, between their cosine
+                similarity and their pearson and spearman similarity. Has the columns: inventory, scale, cosine_pearson,
+                cosine_spearman
+            dict
+                df_md: a dictionary containing the metadata of the data frame, a description and column names
+       """
     # we will define the elements of our final data frame in lists so the creation can be efficient
     scale_id = []
     inventory_id = []
     cosine_pearson = []
     cosine_spearman = []
-    # because our cosine similarity variable is a list of tuples we will use this structure to construct the data
+    # because our cosine similarity variable is a list of tuples we will use this structure to construct the data, every
+    # element of the list represents a unique scale of an inventory
     for one_scale in cosine_similarity:
         # in case there are scales with only one element we want to skip them
-        if len(one_scale[0]) == 1:
+        if len(one_scale[0]) < 3:
             continue
         else:
             # access the information stored in the tuple, one is the list of IDs we used to create the embeddings, and
             # in the same order of that list we want to construct a matrix that represents the correlations calculated
             item_id = one_scale[0]
             scale_cosine = one_scale[1]
-            matrix_pearson = []
-            matrix_spearman = []
             # iterate over all elements of the item ID's to access the correct correlation calculation
-            for i_p in range(len(item_id)):
-                # every row should represent the paired correlation between item i_p and all other items, and 1 in the
-                # diagonals as that is the value of correlation between themselves
-                row_p = [correlations.loc[(correlations['id_i'] == item_id[i_p]) &
-                                          (correlations['id_j'] == item_id[j_p])]['pearson'].values if j_p != i_p
-                         else 1 for j_p in range(len(item_id))]
-                matrix_pearson.append(row_p)
+            # we will grab all unique and non repeating pearson correlations in the data, the lower triangle
+            pearson_scores = [correlations.loc[(correlations['id_i'] == item_id[i_p]) &
+                                               (correlations['id_j'] == item_id[j_p])]['pearson'].values
+                              for i_p in range(len(item_id)-1) for j_p in range(i_p + 1, len(item_id))]
             # repeat the same process for the spearman correlation
-            for i_s in range(len(item_id)):
-                row_s = [correlations.loc[(correlations['id_i'] == item_id[i_s]) &
-                                          (correlations['id_j'] == item_id[j_s])]['spearman'].values if j_s != i_s
-                         else 1 for j_s in range(len(item_id))]
-                matrix_spearman.append(row_s)
+            spearman_scores = [correlations.loc[(correlations['id_i'] == item_id[i_s]) &
+                                                (correlations['id_j'] == item_id[j_s])]['spearman'].values
+                               for i_s in range(len(item_id)-1) for j_s in range(i_s + 1, len(item_id))]
             # now we want to extract only the lower triangle of our matrix, excluding the diagonal
             lower_triangle_cosine = [scale_cosine[i_c][j_c] for i_c in range(len(scale_cosine)) for j_c in
                                      range(i_c + 1, len(scale_cosine[i_c]))]
             # we want only the absolute value of our data
             lower_triangle_cosine = [abs(cs) for cs in lower_triangle_cosine]
-            # extract the triangle and only absolute value for our pearson matrix
-            lower_triangle_pearson = [matrix_pearson[i_mp][j_mp] for i_mp in range(len(matrix_pearson)) for j_mp in
-                                      range(i_mp + 1, len(matrix_pearson[i_mp]))]
-            lower_triangle_pearson = [abs(mp) for mp in lower_triangle_pearson]
-            # extract the triangle and only absolute value for our spearman matrix
-            lower_triangle_spearman = [matrix_spearman[i_ms][j_ms] for i_ms in range(len(matrix_spearman)) for j_ms in
-                                       range(i_ms + 1, len(matrix_spearman[i_ms]))]
-            lower_triangle_spearman = [abs(ms) for ms in lower_triangle_spearman]
+            pearson_scores = [abs(ps) for ps in pearson_scores]
+            spearman_scores = [abs(ss) for ss in spearman_scores]
             # now we can calculate the sepearman correlation between our cosine and pearson and spearman measures
-            corr_cos_pear = spearmanr(lower_triangle_cosine, lower_triangle_pearson, nan_policy='omit').statistic
-            corr_cos_spr = spearmanr(lower_triangle_cosine, lower_triangle_spearman, nan_policy='omit').statistic
+            corr_cos_pear = spearmanr(lower_triangle_cosine, pearson_scores, nan_policy='omit').statistic
+            corr_cos_spr = spearmanr(lower_triangle_cosine, spearman_scores, nan_policy='omit').statistic
             # append each value to use for our data frame, we will get one pearson and spearman per scale per inventory
             inventory_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['inventory_i'].unique()[0])
             scale_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['scale_i'].unique()[0])
@@ -126,17 +139,30 @@ def lt_corr_similarities(cosine_similarity, correlations):
     return final_df, df_md
 
 
-def plot_corr_lt(correlations_df, path, data_set):
+def plot_corr_lt(correlations_df, path):
+    """This function uses matplotlib and seaborn libraries to plot the spearman coefficients of the correlation
+     between pearson and spearman and cosine similarity. It will save the plots to the path and data set that you set.
+
+            Parameters:
+                correlations_df (df): a data frame that contains scales spearman correlation in each inventory for all
+                inventories in the data set and their z value. It should have the columns inventory, scale,
+                cosine_pearson, cosine_spearman
+                path (str): the path to the folder where you want to save the figures
+
+           """
     # clean our data frame by deleting any empty values, normally created by uni dimensional tests
     correlations_df = correlations_df.dropna()
+    # we want to add a unique identifier for every row, so we can group and use the seaborn barplot function
+    correlations_df['scale_inventory'] = correlations_df['scale'] + correlations_df['inventory']
     # we know we want to plot for each similarity relationship, cosine-pearson and cosine-spearman
     corr_types = ['pearson', 'spearman']
     for simi_type in corr_types:
         plt.figure(figsize=(30, 20), dpi=1000)
-        ax = sns.scatterplot(correlations_df, x=correlations_df['scale'], y=correlations_df[f'cosine_{simi_type}'],
-                             hue=correlations_df['inventory'], hue_order=correlations_df['inventory'],
-                             palette='tab10', s=10)
-        ax.axhline(y=0.2, xmin=0, xmax=1, linewidth=0.5, color='black', linestyle='--')
+        # we are going to use the unique ID as the x axis, the z score as the y axis, and we group them together by
+        # the inventory
+        ax = sns.barplot(correlations_df, x=correlations_df['scale_inventory'], y=correlations_df[f'cosine_{simi_type}'],
+                         hue=correlations_df['inventory'], palette='Dark2', saturation=1, dodge=True, legend='full',
+                         width=2)
         ax.set_ylim(-1, 1.1)
         ax.set_title(f'Between scale Spearman correlation between the cosine and {simi_type} similarity, \n '
                      f'for all inventories in the {data_set} dataset', fontsize=20)
@@ -145,121 +171,151 @@ def plot_corr_lt(correlations_df, path, data_set):
         ax.set_xticks([])
         ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         plt.tight_layout()
-        plt.savefig((os.path.join(path, data_set, ('lt_cosine_' + simi_type + '.png'))))
+        plt.savefig((os.path.join(path, ('lt_cosine_' + simi_type + '.png'))))
         plt.close()
 
 
-def loo_corr_similarities(cosine_similarity, empirical_similarity):
-    # we want to keep only the values that represent the similarity between the same scale, as in this data frame we
-    # have calculated the similarity between all possible scales in the same inventory
-    empirical_similarity = empirical_similarity[empirical_similarity['scale_i'] ==
-                                                empirical_similarity['scale_j']].reset_index(drop=True)
-    # we can merge our two data frames, as they will have the same value in inventory and the same value in scale
-    all_similarities = pd.merge(cosine_similarity, empirical_similarity, left_on=['inventory', 'scale'],
-                                right_on=['inventory', 'scale_i']).reset_index(drop=True)
-    df = all_similarities.drop(['scale_j', 'scale_i'], axis=1)
-    all_inventory = []
-    final_pearson = []
-    final_spearman = []
-    inventory_ID = []
-    # iterate over every individual inventory to create a list of data frames by scale, we want to reset the index
-    # for simplifying indexing in the next steps
-    for inventory_name, inventory_df in df.groupby('inventory', sort=False):
-        all_inventory.append(inventory_df.reset_index(drop=True))
-    # now we can iterate over each inventory data frame and calculate the relationship between the scales
-    # different similarity measurements
-    for one_inventory in all_inventory:
-        inventory_correlation_pearson = []
-        inventory_correlation_spearman = []
-        for i in range(len(one_inventory)):
-            # Omit the ith value in both predicted and empirical similarities
-            loo_inventory = one_inventory.drop(i)
-            correlation_pearson = spearmanr(loo_inventory['cosine_similarity'].abs(),
-                                            loo_inventory['pearson_similarity'].abs(), nan_policy='omit').statistic
-            correlation_spearman = spearmanr(loo_inventory['cosine_similarity'].abs(),
-                                             loo_inventory['spearman_similarity'].abs(), nan_policy='omit').statistic
-            # we calculate the spearman correlation for every row or scale in an inventory while omiting that scale
-            inventory_correlation_pearson.append(correlation_pearson)
-            inventory_correlation_spearman.append(correlation_spearman)
-        # construct the lists with the elements for each inventory
-        inventory_ID.append(one_inventory['inventory'].unique()[0])
-        final_pearson.append(np.mean(inventory_correlation_pearson))
-        final_spearman.append(np.mean(inventory_correlation_spearman))
+def create_square_matrix(list_rows):
+    m = len(list_rows[0])
+    full_matrix = np.zeros((m, m))
+    # Populate the matrix with values from the list
+    for i, array in enumerate(list_rows):
+        # Set the diagonal element
+        full_matrix[i, i] = array[0]
+        # Set values in the upper triangle
+        full_matrix[i, i + 1:] = array[1:]
+        # Mirror the values in the lower triangle
+        full_matrix[i + 1:, i] = array[1:]
+    np.fill_diagonal(full_matrix, 1)
+    return full_matrix
+
+
+def item_corr_similarities(cosine_similarity, correlations):
+    """This function will calculate the scale spearman correlation between the cosine similarities and pearson and
+        spearman similarities for every item, in every scale, for all inventories in the data set. It will extract the
+        similarity scores of one item with all other items in the scale, excluding the relationship with itself. It will
+        do this procedure for cosine similarity, pearson and spearman similarity. Then it will take the array of cosine
+        similarity and calculate a spearman correlation with pearson and spearman. It will return a data frame that
+        contains the columns: inventory, scale, item, cosine_pearson, cosine_spearman
+
+            Parameters:
+                cosine_similarity (list): a list of tuples, each tuple represents one scale. The first element represents
+                the ID of all elements used to calculate the matrix of cosine similarities. The second element is the
+                matrix of cosine similarities.
+                correlations (df): a data frame containing all possible pair wise correlations for all items in the data
+                set. It should have the columns: inventory_i, scale_i, item_i, id_i, inventory_j, scale_j, item_j, id_j,
+                pearson, spearman.
+
+            Returns:
+                df
+                    final_df: a data frame that contains the spearman coefficient for every item, between their cosine
+                    similarity and their pearson and spearman similarity. Has the columns: inventory, scale, item,
+                    cosine_pearson, cosine_spearman
+                dict
+                    df_md: a dictionary containing the metadata of the data frame, a description and column names
+           """
+    # we will define the elements of our final data frame in lists so the creation can be efficient
+    scale_id = []
+    inventory_id = []
+    item = []
+    cosine_pearson = []
+    cosine_spearman = []
+    # because our cosine similarity variable is a list of tuples we will use this structure to construct the data, every
+    # element of the list represents a unique scale of an inventory
+    for one_scale in cosine_similarity:
+        # in case there are scales with only one or two element we want to skip them
+        if len(one_scale[0]) < 3:
+            continue
+        else:
+            # access the information stored in the tuple, one is the list of IDs we used to create the embeddings, and
+            # in the same order of that list we want to construct a matrix that represents the correlations calculated
+            item_id = one_scale[0]
+            scale_cosine = one_scale[1]
+            matrix_pearson = []
+            matrix_spearman = []
+            for i_p in range(len(item_id)-1):
+                # every row should represent the paired correlation between item i_p and all other items, and 1 in the
+                # diagonals as that is the value of correlation between themselves
+                row_p = [correlations.loc[(correlations['id_i'] == item_id[i_p]) &
+                                          (correlations['id_j'] == item_id[j_p])]['pearson'].values if j_p != i_p
+                         else 1 for j_p in range(len(item_id))]
+                matrix_pearson.append(np.hstack(row_p))
+                row_s = [correlations.loc[(correlations['id_i'] == item_id[i_p]) &
+                                          (correlations['id_j'] == item_id[j_s])]['spearman'].values if j_s != i_p
+                         else 1 for j_s in range(len(item_id))]
+                matrix_spearman.append(np.hstack(row_s))
+            # we will end with a list containing each row of our square matrix, we want to now construc the square
+            # matrix of correlations so we can iterate row by row for every item
+            full_matrix_pearson = create_square_matrix(matrix_pearson)
+            full_matrix_spearman = create_square_matrix(matrix_spearman)
+            # we are going to iterate row by row, and we want to index into all items excluding the item that represents
+            # that row
+            for i_id in range(len(item_id)):
+                # we will sum here al indexes before the item and all indexes after, having all possible indexes but
+                # the item itself
+                row_idx = list(range(len(item_id)))[:i_id] + list(range(len(item_id))[i_id+1:])
+                # now we can use those indexes to extract each row of cosine similarity matrix, pearson and spearman.
+                # This works because all 3 matrices are square and they are in the same order of items.
+                one_row_pearson = [full_matrix_pearson[i_id][j_c] for j_c in row_idx]
+                one_row_spearman = [full_matrix_spearman[i_id][j_c] for j_c in row_idx]
+                one_row_cosine = [scale_cosine[i_id][j_c] for j_c in row_idx]
+                # we want only the absolute value of our data
+                one_row_cosine = [abs(cs) for cs in one_row_cosine]
+                one_row_pearson = [abs(ps) for ps in one_row_pearson]
+                one_row_spearman = [abs(ss) for ss in one_row_spearman]
+                # now we can calculate the spearman correlation between our cosine and pearson and spearman measures
+                corr_cos_pear = spearmanr(one_row_cosine, one_row_pearson, nan_policy='omit').statistic
+                corr_cos_spr = spearmanr(one_row_cosine, one_row_spearman, nan_policy='omit').statistic
+                # append each value to use for our data frame, we will get one pearson and spearman per scale per
+                # item, per scale, for all inventories
+                inventory_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['inventory_i'].unique()[0])
+                scale_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['scale_i'].unique()[0])
+                # because of the structure of our correlations data frame, all pair correlation exist but only once,
+                # so we want to check when we are dealing with an item that only exists in the column j of the data
+                if correlations.loc[correlations['id_i'] == item_id[i_id]]['item_i'].unique().size == 0:
+                    item.append(correlations.loc[correlations['id_j'] == item_id[i_id]]['item_j'].unique()[0])
+                else:
+                    item.append(correlations.loc[correlations['id_i'] == item_id[i_id]]['item_i'].unique()[0])
+                cosine_pearson.append(corr_cos_pear)
+                cosine_spearman.append(corr_cos_spr)
     # define the column names and data types for our final data frame
-    schema = {'inventory': 'str', 'scale': 'str', 'cosine_pearson': 'float32', 'cosine_spearman': 'float32'}
+    schema = {'inventory': 'str', 'scale': 'str', 'item': 'str', 'cosine_pearson': 'float32',
+              'cosine_spearman': 'float32'}
     final_df = pd.DataFrame(columns=schema.keys()).astype(schema)
-    main_list = [inventory_ID, final_pearson, final_spearman]
+    main_list = [inventory_id, scale_id, item, cosine_pearson, cosine_spearman]
     # construct the final data frame by unzipping the information in our lists and dictionary
     for col_names, values_list in zip(schema.keys(), main_list):
         final_df[col_names] = values_list
-    return final_df
-
-
-def plot_corr_loo(correlations_df, path, data_set):
-    # clean our data frame by deleting any empty values, normally created by uni dimensional tests
-    correlations_df = correlations_df.dropna()
-    # we know we want to plot for each similarity relationship, cosine-pearson and cosine-spearman
-    corr_types = ['pearson', 'spearman']
-    for simi_type in corr_types:
-        plt.figure(figsize=(20, 10), dpi=1000)
-        ax = sns.scatterplot(correlations_df, x=correlations_df['inventory'], y=correlations_df[f'cosine_{simi_type}'],
-                             hue=correlations_df['inventory'], hue_order=correlations_df['inventory'],
-                             palette='tab10', s=200)
-        ax.set_title(f'Leave one out Spearman correlation between the cosine and {simi_type} similarity, \n '
-                     f'for all inventories in the {data_set} dataset', fontsize=20)
-        ax.set_ylim(-1, 1.1)
-        ax.set_ylabel('Spearman coefficient', fontsize=16)
-        ax.set_xlabel('Inventory', fontsize=16)
-        ax.set_xticks([])
-        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-        plt.tight_layout()
-        plt.savefig((os.path.join(path, data_set, ('loo_cosine_' + simi_type + '.png'))))
-        plt.close()
+    df_md = {
+        'information': 'This data frame contains the spearman correlation between the similarity of each item with all'
+                       'other items in its scale, excluding itself. The similarity measures are cosine, pearson and'
+                       'spearman.',
+        'columns': final_df.columns.tolist()
+    }
+    return final_df, df_md
 
 
 if __name__ == "__main__":
     root = '/Users/josechonay/Library/CloudStorage/OneDrive-CarlvonOssietzkyUniversitätOldenburg/Winter Semester ' \
            '23-24/Internship/ARC'
-    data_set = 'Springfield_Community'
+    data_set = 'Open_Source_Psychometrics'
 
-    items = pd.read_csv(os.path.join(root, data_set, 'items.tsv'), header=0)
+    items = pd.read_csv(os.path.join(root, data_set, 'items_clean.tsv'), header=0)
 
     cosine_similarity = scale_cos_sim(items)
 
     correlations = pd.read_csv((os.path.join(root, data_set) + '/item_correlation.tsv'), header=0)
 
-    lt_similarities_corr, lt_md = lt_corr_similarities(cosine_similarity, correlations)
-    lt_similarities_corr.to_csv((os.path.join(root, data_set) + '/spearman_predicted_empirical_similarity.tsv'),
-                                index=False)
-    with open((os.path.join(root, data_set) + '/spearman_predicted_empirical_similarity.json'), 'w') as metadata_file:
-        json.dump(lt_md, metadata_file)
+    # lt_similarities_corr, lt_md = lt_corr_similarities(cosine_similarity, correlations)
+    # lt_similarities_corr.to_csv((os.path.join(root, data_set) + '/spearman_lower_triangle_similarity.tsv'),
+    #                             index=False)
+    # with open((os.path.join(root, data_set) + '/spearman_lower_triangle_similarity.json'), 'w') as metadata_file:
+    #     json.dump(lt_md, metadata_file)
+    #
+    # plot_corr_lt(lt_similarities_corr, os.path.join(root, data_set))
 
-    plot_corr_lt(lt_similarities_corr, root, data_set)
-    #
-    # loo_similarities_corr = loo_corr_similarities(cosine_similarity, empirical_similarity)
-    #
-    # plot_corr_loo(loo_similarities_corr, root, data_set)
-    # test_data = all_similarities[all_similarities['inventory'] == '275-IPIP']
-    # correlation_test = spearmanr(test_data['cosine_similarity'], test_data['pearson_similarity'],
-    #                              nan_policy='omit').statistic
-    # # Number of permutations
-    # num_permutations = 1000
-    #
-    # # Perform permutation test
-    # permuted_correlations = []
-    # for _ in range(num_permutations):
-    #     # Permute the second array
-    #     permuted_array2 = np.random.permutation(test_data['pearson_similarity'])
-    #
-    #     # Calculate Spearman correlation for the permuted data
-    #     permuted_corr, _ = spearmanr(test_data['cosine_similarity'], permuted_array2, nan_policy='omit')
-    #     permuted_correlations.append(permuted_corr)
-    #
-    # # Plot the distribution of permuted correlations
-    # plt.hist(permuted_correlations, bins=30, color='blue', alpha=0.7, label='Permuted Correlations')
-    # plt.axvline(correlation_test, color='red', linestyle='dashed', linewidth=2, label='Observed Correlation')
-    # plt.title('Permutation Test for Spearman Correlation')
-    # plt.xlabel('Spearman Correlation')
-    # plt.ylabel('Frequency')
-    # plt.legend()
-    # plt.show()
+    item_similarities, it_sim_md = item_corr_similarities(cosine_similarity, correlations)
+    item_similarities.to_csv((os.path.join(root, data_set) + '/item_similarities_spearman.tsv'),
+                             index=False)
+    with open((os.path.join(root, data_set) + '/item_similarities_spearman.json'), 'w') as metadata_file:
+        json.dump(it_sim_md, metadata_file)

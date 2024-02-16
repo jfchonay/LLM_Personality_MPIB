@@ -189,7 +189,6 @@ def construct_corr_df(items, scores, save, **path):
     # items data frame and we don't need the last element as it will already be included as part of all possible
     # combinations with the other items
     for idx_i in range(len(items) - 1):
-        print(f'{idx_i + 1} of {len(items)}')
         # we want to iterate over all other items but the item itself
         for idx_j in range(idx_i + 1, len(items)):
             # this logical indexing works because our data frame spearman and pearson was created using the buitl in
@@ -220,15 +219,22 @@ def construct_corr_df(items, scores, save, **path):
 
 if __name__ == "__main__":
     root = 'path to folder'
-    data_set = 'Springfield_Community'
+    data_set = 'name of data set'
     scores_folder = os.path.join(root, data_set, 'scores')
     item_folder = os.path.join(root, data_set, 'items')
 
     items, scores = get_df(item_folder, scores_folder, 'tsv')
 
     items_clean, items_md, scores_clean, scores_md = clean_items(items, scores)
+    items_clean.to_csv((os.path.join(root, data_set) + '/items_clean.tsv'), index=False)
+    with open((os.path.join(root, data_set) + '/items_clean.json'), 'w') as metadata_c_file:
+        json.dump(items_md, metadata_c_file)
 
-    corr_df, corr_md = construct_corr_df(items_clean, scores, False)
+    scores_clean.to_csv((os.path.join(root, data_set) + '/scores_clean.tsv'), index=False)
+    with open((os.path.join(root, data_set) + '/scores_clean.json'), 'w') as metadata_c_file:
+        json.dump(scores_md, metadata_c_file)
+
+    corr_df, corr_md = construct_corr_df(items_clean, scores_clean, False)
 
     corr_df.to_csv((os.path.join(root, data_set) + '/item_correlation.tsv'), index=False)
     with open((os.path.join(root, data_set) + '/item_correlation.json'), 'w') as metadata_c_file:

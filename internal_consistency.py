@@ -3,7 +3,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from item_corr import just_language
 import json
 
 
@@ -180,13 +179,11 @@ def plot_zscore(zscore_df, path):
 
 
 if __name__ == "__main__":
-    root = 'path to folder'
+    root = '/Users/josechonay/Library/CloudStorage/OneDrive-CarlvonOssietzkyUniversitätOldenburg/Winter Semester ' \
+           '23-24/Internship/ARC'
     data_set = 'Open_Source_Psychometrics'
-    data = 'item_correlation'
 
-    correlations = pd.read_csv((os.path.join(root, data_set, data) + '.tsv'), header=0)
-    correlations['item_i'] = correlations['item_i'].apply(just_language)
-    correlations['item_j'] = correlations['item_j'].apply(just_language)
+    correlations = pd.read_csv(os.path.join(root, data_set, 'item_correlation.tsv'), header=0)
 
     paired_similarities_df = get_similarities(correlations)
 
