@@ -21,8 +21,9 @@ def scale_cos_sim(items_df):
         Returns:
             list
                 items_cosine: a list of tuples, the first element of the tuple is the id of the sentences used to
-                calculate the cosine similarity matrix, the second element is the cosine similarity matrix saved as
-                 a tensor.
+                calculate the cosine similarity matrix, the second element is the inventory name as a string, the third
+                element is the scale name as a string and the fourth element is the cosine similarity matrix saved as a
+                tensor.
        """
     # we define our model for the sentence transformer, we are using MPnet. For more information look up for the
     # documentation in sbert.net
@@ -47,29 +48,33 @@ def scale_cos_sim(items_df):
         # we can extract the sentences for the model to create the embeddings, we want to extrac the item ID
         sentences = individual_scale['item'].tolist()
         item_id = individual_scale['id'].tolist()
+        inventory = individual_scale['inventory'].unique()[0]
+        scale = individual_scale['scale'].unique()[0]
         embeddings = model.encode(sentences, convert_to_tensor=True)
         # calculate the cosine similarity between all embeddings, this matrix will be of the size of
-        # embeddings X embeddings and will contain all similarities
-        all_cosine = util.cos_sim(embeddings, embeddings)
+        # embeddings X embeddings and will contain all similarities and take the absolute value of it
+        all_cosine = abs(util.cos_sim(embeddings, embeddings))
         # now we can create every row of our data frame as an element of the list
-        item_cosine.append((item_id, all_cosine))
+        item_cosine.append((item_id, inventory, scale, all_cosine))
     return item_cosine
 
 
 def lt_corr_similarities(cosine_similarity, correlations):
     """This function will calculate the scale spearman correlation between the cosine similarities and pearson and
     spearman similarities. The cosine similarities are calculated with the embeddings, and they are in the form of a
-    list. The list contain tuples, in the first element there is the list of item IDs of that scale and the second
-    element is the cosine similarity matrix between all those items. The correlation data frame contains all possible
-    inter item correlation pairs for this data set. We want to extract the lower triangle of both similarities,
-    meaning all the possible and unique pairings. Then the function will calculate the spearman correlation between
-    both arrays and return a value per scale for all scales in all inventories in the data set. The resulting data
-    frame will have columns: inventory, scale, cosine_pearson, spearman_pearson
+    list. The list contain tuples, in the first element there is the list of item IDs of that scale,the second
+    element contains the name of the inventory, the third the name of the scale, and the fourth is the cosine similarity
+    matrix between all those items. The correlation data frame contains all possible inter item correlation pairs for
+    this data set. We want to extract the lower triangle of both similarities, meaning all the possible and unique
+    pairings. Then the function will calculate the spearman correlation between both arrays and return a value per
+    scale for all scales in all inventories in the data set. The resulting data frame will have columns: inventory,
+    scale, cosine_pearson, spearman_pearson
 
         Parameters:
-            cosine_similarity (list): a list of tuples, each tuple represents one scale. The first element represents
-            the ID of all elements used to calculate the matrix of cosine similarities. The second element is the
-            matrix of cosine similarities.
+            cosine_similarity (list): a list of tuples, the first element of the tuple is the id of the sentences used
+            to calculate the cosine similarity matrix, the second element is the inventory name as a string, the third
+            element is the scale name as a string and the fourth element is the cosine similarity matrix saved as a
+            tensor.
             correlations (df): a data frame containing all possible pair wise correlations for all items in the data
             set. It should have the columns: inventory_i, scale_i, item_i, id_i, inventory_j, scale_j, item_j, id_j,
             pearson, spearman.
@@ -97,29 +102,29 @@ def lt_corr_similarities(cosine_similarity, correlations):
             # access the information stored in the tuple, one is the list of IDs we used to create the embeddings, and
             # in the same order of that list we want to construct a matrix that represents the correlations calculated
             item_id = one_scale[0]
-            scale_cosine = one_scale[1]
-            # iterate over all elements of the item ID's to access the correct correlation calculation
-            # we will grab all unique and non repeating pearson correlations in the data, the lower triangle
-            pearson_scores = [correlations.loc[(correlations['id_i'] == item_id[i_p]) &
-                                               (correlations['id_j'] == item_id[j_p])]['pearson'].values
-                              for i_p in range(len(item_id)-1) for j_p in range(i_p + 1, len(item_id))]
+            inventory = one_scale[1]
+            scale = one_scale[2]
+            scale_cosine = one_scale[3]
+            # extract the section of the data frame that contains all inter item correlations for all items in one scale
+            # for all inventories, extract only the pearson values and their absolute value
+            pearson_scores = abs(correlations[(correlations['inventory_i'] == inventory) &
+                                              (correlations['scale_i'] == scale) &
+                                              (correlations['inventory_j'] == inventory) &
+                                              (correlations['scale_j'] == scale)]['pearson'].values)
             # repeat the same process for the spearman correlation
-            spearman_scores = [correlations.loc[(correlations['id_i'] == item_id[i_s]) &
-                                                (correlations['id_j'] == item_id[j_s])]['spearman'].values
-                               for i_s in range(len(item_id)-1) for j_s in range(i_s + 1, len(item_id))]
+            spearman_scores = abs(correlations[(correlations['inventory_i'] == inventory) &
+                                          (correlations['scale_i'] == scale) &
+                                          (correlations['inventory_j'] == inventory) &
+                                          (correlations['scale_j'] == scale)]['spearman'].values)
             # now we want to extract only the lower triangle of our matrix, excluding the diagonal
             lower_triangle_cosine = [scale_cosine[i_c][j_c] for i_c in range(len(scale_cosine)) for j_c in
                                      range(i_c + 1, len(scale_cosine[i_c]))]
-            # we want only the absolute value of our data
-            lower_triangle_cosine = [abs(cs) for cs in lower_triangle_cosine]
-            pearson_scores = [abs(ps) for ps in pearson_scores]
-            spearman_scores = [abs(ss) for ss in spearman_scores]
             # now we can calculate the sepearman correlation between our cosine and pearson and spearman measures
             corr_cos_pear = spearmanr(lower_triangle_cosine, pearson_scores, nan_policy='omit').statistic
             corr_cos_spr = spearmanr(lower_triangle_cosine, spearman_scores, nan_policy='omit').statistic
             # append each value to use for our data frame, we will get one pearson and spearman per scale per inventory
-            inventory_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['inventory_i'].unique()[0])
-            scale_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['scale_i'].unique()[0])
+            inventory_id.append(inventory)
+            scale_id.append(scale)
             cosine_pearson.append(corr_cos_pear)
             cosine_spearman.append(corr_cos_spr)
     # define the schema for our data frame, with the column  names and data types
@@ -199,9 +204,10 @@ def item_corr_similarities(cosine_similarity, correlations):
         contains the columns: inventory, scale, item, cosine_pearson, cosine_spearman
 
             Parameters:
-                cosine_similarity (list): a list of tuples, each tuple represents one scale. The first element represents
-                the ID of all elements used to calculate the matrix of cosine similarities. The second element is the
-                matrix of cosine similarities.
+                cosine_similarity (list): a list of tuples, the first element of the tuple is the id of the sentences
+                used to calculate the cosine similarity matrix, the second element is the inventory name as a string,
+                the third element is the scale name as a string and the fourth element is the cosine similarity matrix
+                 saved as a tensor
                 correlations (df): a data frame containing all possible pair wise correlations for all items in the data
                 set. It should have the columns: inventory_i, scale_i, item_i, id_i, inventory_j, scale_j, item_j, id_j,
                 pearson, spearman.
@@ -230,21 +236,29 @@ def item_corr_similarities(cosine_similarity, correlations):
             # access the information stored in the tuple, one is the list of IDs we used to create the embeddings, and
             # in the same order of that list we want to construct a matrix that represents the correlations calculated
             item_id = one_scale[0]
-            scale_cosine = one_scale[1]
+            inventory = one_scale[1]
+            scale = one_scale[2]
+            scale_cosine = one_scale[3]
+            slice_correlation = correlations[(correlations['inventory_i'] == inventory) &
+                                              (correlations['scale_i'] == scale) &
+                                              (correlations['inventory_j'] == inventory) &
+                                              (correlations['scale_j'] == scale)]
             matrix_pearson = []
             matrix_spearman = []
             for i_p in range(len(item_id)-1):
-                # every row should represent the paired correlation between item i_p and all other items, and 1 in the
-                # diagonals as that is the value of correlation between themselves
-                row_p = [correlations.loc[(correlations['id_i'] == item_id[i_p]) &
-                                          (correlations['id_j'] == item_id[j_p])]['pearson'].values if j_p != i_p
-                         else 1 for j_p in range(len(item_id))]
+                # we can extract all possible correlation values for our item, because of our data frame we know that
+                # this will also represent each row in the cosine similarity matrix as the items are selected in the
+                # same order
+                row_p = abs(slice_correlation[slice_correlation['id_i'] == item_id[i_p]]['pearson'].values)
+                # we add a one in the front as we know this is the correlation between the item and itself
+                row_p = np.insert(row_p, 0, 1)
+                # stack to end up with a 1D matrix
                 matrix_pearson.append(np.hstack(row_p))
-                row_s = [correlations.loc[(correlations['id_i'] == item_id[i_p]) &
-                                          (correlations['id_j'] == item_id[j_s])]['spearman'].values if j_s != i_p
-                         else 1 for j_s in range(len(item_id))]
+                # repeat for spearman
+                row_s = abs(slice_correlation[slice_correlation['id_i'] == item_id[i_p]]['spearman'].values)
+                row_s = np.insert(row_s, 0, 1)
                 matrix_spearman.append(np.hstack(row_s))
-            # we will end with a list containing each row of our square matrix, we want to now construc the square
+            # we will end with a list containing each row of our square matrix, we want to now construct the square
             # matrix of correlations so we can iterate row by row for every item
             full_matrix_pearson = create_square_matrix(matrix_pearson)
             full_matrix_spearman = create_square_matrix(matrix_spearman)
@@ -259,23 +273,19 @@ def item_corr_similarities(cosine_similarity, correlations):
                 one_row_pearson = [full_matrix_pearson[i_id][j_c] for j_c in row_idx]
                 one_row_spearman = [full_matrix_spearman[i_id][j_c] for j_c in row_idx]
                 one_row_cosine = [scale_cosine[i_id][j_c] for j_c in row_idx]
-                # we want only the absolute value of our data
-                one_row_cosine = [abs(cs) for cs in one_row_cosine]
-                one_row_pearson = [abs(ps) for ps in one_row_pearson]
-                one_row_spearman = [abs(ss) for ss in one_row_spearman]
                 # now we can calculate the spearman correlation between our cosine and pearson and spearman measures
                 corr_cos_pear = spearmanr(one_row_cosine, one_row_pearson, nan_policy='omit').statistic
                 corr_cos_spr = spearmanr(one_row_cosine, one_row_spearman, nan_policy='omit').statistic
                 # append each value to use for our data frame, we will get one pearson and spearman per scale per
                 # item, per scale, for all inventories
-                inventory_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['inventory_i'].unique()[0])
-                scale_id.append(correlations.loc[correlations['id_i'] == item_id[0]]['scale_i'].unique()[0])
+                inventory_id.append(inventory)
+                scale_id.append(scale)
                 # because of the structure of our correlations data frame, all pair correlation exist but only once,
                 # so we want to check when we are dealing with an item that only exists in the column j of the data
-                if correlations.loc[correlations['id_i'] == item_id[i_id]]['item_i'].unique().size == 0:
-                    item.append(correlations.loc[correlations['id_j'] == item_id[i_id]]['item_j'].unique()[0])
+                if slice_correlation.loc[slice_correlation['id_i'] == item_id[i_id]]['item_i'].unique().size == 0:
+                    item.append(slice_correlation.loc[slice_correlation['id_j'] == item_id[i_id]]['item_j'].unique()[0])
                 else:
-                    item.append(correlations.loc[correlations['id_i'] == item_id[i_id]]['item_i'].unique()[0])
+                    item.append(slice_correlation.loc[slice_correlation['id_i'] == item_id[i_id]]['item_i'].unique()[0])
                 cosine_pearson.append(corr_cos_pear)
                 cosine_spearman.append(corr_cos_spr)
     # define the column names and data types for our final data frame
@@ -296,9 +306,8 @@ def item_corr_similarities(cosine_similarity, correlations):
 
 
 if __name__ == "__main__":
-    root = '/Users/josechonay/Library/CloudStorage/OneDrive-CarlvonOssietzkyUniversitätOldenburg/Winter Semester ' \
-           '23-24/Internship/ARC'
-    data_set = 'Open_Source_Psychometrics'
+    root = 'path to folder'
+    data_set = 'Springfield_Community'
 
     items = pd.read_csv(os.path.join(root, data_set, 'items_clean.tsv'), header=0)
 
@@ -306,13 +315,13 @@ if __name__ == "__main__":
 
     correlations = pd.read_csv((os.path.join(root, data_set) + '/item_correlation.tsv'), header=0)
 
-    # lt_similarities_corr, lt_md = lt_corr_similarities(cosine_similarity, correlations)
-    # lt_similarities_corr.to_csv((os.path.join(root, data_set) + '/spearman_lower_triangle_similarity.tsv'),
-    #                             index=False)
-    # with open((os.path.join(root, data_set) + '/spearman_lower_triangle_similarity.json'), 'w') as metadata_file:
-    #     json.dump(lt_md, metadata_file)
-    #
-    # plot_corr_lt(lt_similarities_corr, os.path.join(root, data_set))
+    lt_similarities_corr, lt_md = lt_corr_similarities(cosine_similarity, correlations)
+    lt_similarities_corr.to_csv((os.path.join(root, data_set) + '/spearman_lower_triangle_similarity.tsv'),
+                                index=False)
+    with open((os.path.join(root, data_set) + '/spearman_lower_triangle_similarity.json'), 'w') as metadata_file:
+        json.dump(lt_md, metadata_file)
+
+    plot_corr_lt(lt_similarities_corr, os.path.join(root, data_set))
 
     item_similarities, it_sim_md = item_corr_similarities(cosine_similarity, correlations)
     item_similarities.to_csv((os.path.join(root, data_set) + '/item_similarities_spearman.tsv'),
