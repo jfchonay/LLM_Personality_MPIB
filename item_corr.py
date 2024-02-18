@@ -136,8 +136,8 @@ def construct_corr_df(items, scores, save, **path):
         Returns:
             df
                 corr_df: a data frame containing all the pair wise possible and unique correlations between all the
-                items in the data set. With the columns: inventory_i, scale_i, item_i, inventory_j, scale_j, item_j,
-                pearson, spearman.
+                items in the data set. With the columns: inventory_i, scale_i, item_i, id_i, inventory_j, scale_j,
+                item_j, id_j, pearson, spearman.
             dict
                 corr_md: a dictionary with the description of the data frame and the columns, made to be saved as json
                 file with the data frame
