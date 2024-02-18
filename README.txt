@@ -15,8 +15,7 @@ The analysis pipeline consisted of creating one file with all scores and items f
  sentence embeddings to calculate predicted similarity measures of items based on the cosine similarity of the
  embeddings. After that the Spearman correlation between predicted and empirical similarity was computed in two ways,
  one taking all possible and unique pairings in a scale and calculating their relationship, and going row by row or
- item by item. In the derivatives folder all data frames or ‘.tsv’ files contain a ‘.json’ file that contains metadata
- of the information.
+ item by item.
 
 This work was done for the Adaptive Rationality Center at the Max Planck Institute for Human Development
 under the supervision of Dr. Dirk Wulff between the months of December 2023 and February 2024 by José Francisco Chonay.
