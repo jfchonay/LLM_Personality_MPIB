@@ -12,7 +12,9 @@ def scale_cos_sim(items_df):
     """This function will use the sentence transformer MPnet to calculate the cosine similarity of items in the same
     scale for all inventories in the data set. It takes a data frame containing only the language portions of the items,
     and that it has the following columns: inventory, scale, item, id. It will return a list of tuples, the first
-    element of the tuple is the list of item ID, and the second is the matrix containing the similarities.
+    element of the tuple is the id of the sentences used to calculate the cosine similarity matrix, the second element
+    is the inventory name as a string, the third element is the scale name as a string and the fourth element is the
+    absolute values of the cosine similarity matrix saved as a tensor.
 
         Parameters:
             items_df (df): a data frame that contains all items belonging to the data set, has the columns: inventory,
@@ -22,8 +24,8 @@ def scale_cos_sim(items_df):
             list
                 items_cosine: a list of tuples, the first element of the tuple is the id of the sentences used to
                 calculate the cosine similarity matrix, the second element is the inventory name as a string, the third
-                element is the scale name as a string and the fourth element is the cosine similarity matrix saved as a
-                tensor.
+                element is the scale name as a string and the fourth element is the absolute values of the cosine
+                similarity matrix saved as a tensor.
        """
     # we define our model for the sentence transformer, we are using MPnet. For more information look up for the
     # documentation in sbert.net
@@ -45,7 +47,8 @@ def scale_cos_sim(items_df):
             group_scale.append(scale_df.reset_index(drop=True))
     # now if we iterate over each element we are accessing individual scales for each inventory
     for individual_scale in group_scale:
-        # we can extract the sentences for the model to create the embeddings, we want to extrac the item ID
+        # we can extract the sentences for the model to create the embeddings, we want to extrac the item ID used in
+        # each calculation, the inventory name, and the scale name
         sentences = individual_scale['item'].tolist()
         item_id = individual_scale['id'].tolist()
         inventory = individual_scale['inventory'].unique()[0]
@@ -54,7 +57,7 @@ def scale_cos_sim(items_df):
         # calculate the cosine similarity between all embeddings, this matrix will be of the size of
         # embeddings X embeddings and will contain all similarities and take the absolute value of it
         all_cosine = abs(util.cos_sim(embeddings, embeddings))
-        # now we can create every row of our data frame as an element of the list
+        # now we can append the tuple to our list
         item_cosine.append((item_id, inventory, scale, all_cosine))
     return item_cosine
 
@@ -95,7 +98,7 @@ def lt_corr_similarities(cosine_similarity, correlations):
     # because our cosine similarity variable is a list of tuples we will use this structure to construct the data, every
     # element of the list represents a unique scale of an inventory
     for one_scale in cosine_similarity:
-        # in case there are scales with only one element we want to skip them
+        # in case there are scales with less than two elements we want to skip them
         if len(one_scale[0]) < 3:
             continue
         else:
@@ -106,7 +109,9 @@ def lt_corr_similarities(cosine_similarity, correlations):
             scale = one_scale[2]
             scale_cosine = one_scale[3]
             # extract the section of the data frame that contains all inter item correlations for all items in one scale
-            # for all inventories, extract only the pearson values and their absolute value
+            # for all inventories, extract only the pearson values and their absolute value, in this case there doesn't
+            # exist a value for item against item correlation so all the values we grab are the possible and unique
+            # pairings
             pearson_scores = abs(correlations[(correlations['inventory_i'] == inventory) &
                                               (correlations['scale_i'] == scale) &
                                               (correlations['inventory_j'] == inventory) &
@@ -163,12 +168,12 @@ def plot_corr_lt(correlations_df, path):
     corr_types = ['pearson', 'spearman']
     for simi_type in corr_types:
         plt.figure(figsize=(30, 20), dpi=1000)
-        # we are going to use the unique ID as the x axis, the z score as the y axis, and we group them together by
-        # the inventory
+        # we are going to use the unique ID as the x axis, the spearman correlation as the y axis, and we group them
+        # together by the inventory
         ax = sns.barplot(correlations_df, x=correlations_df['scale_inventory'], y=correlations_df[f'cosine_{simi_type}'],
                          hue=correlations_df['inventory'], palette='Dark2', saturation=1, dodge=True, legend='full',
                          width=2)
-        ax.set_ylim(-1, 1.1)
+        ax.set_ylim(-1.1, 1.1)
         ax.set_title(f'Between scale Spearman correlation between the cosine and {simi_type} similarity, \n '
                      f'for all inventories in the {data_set} dataset', fontsize=20)
         ax.set_ylabel('Spearman coefficient', fontsize=16)
@@ -196,7 +201,7 @@ def create_square_matrix(list_rows):
 
 
 def item_corr_similarities(cosine_similarity, correlations):
-    """This function will calculate the scale spearman correlation between the cosine similarities and pearson and
+    """This function will calculate the spearman correlation between the cosine similarities and pearson and
         spearman similarities for every item, in every scale, for all inventories in the data set. It will extract the
         similarity scores of one item with all other items in the scale, excluding the relationship with itself. It will
         do this procedure for cosine similarity, pearson and spearman similarity. Then it will take the array of cosine
