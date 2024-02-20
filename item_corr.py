@@ -113,7 +113,7 @@ def clean_items(items, scores):
     return items_clean, items_md, scores_clean, scores_md
 
 
-def construct_corr_df(items, scores, save, **path):
+def construct_corr_df(items, scores, save, *path):
     """This function will construct a data frame that will contain all possible and unique pair wise correlation between
     all the items in the data set. In the function it will use the built-in pandas correlation calculation to calculate
     the matrix of all possible correlations between the scores. Then based on the structure of the items and scores
